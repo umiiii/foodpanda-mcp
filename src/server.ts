@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import { FoodpandaClient } from "./foodpanda-client.js";
+import { refreshTokenViaBrowser, persistToken } from "./token-manager.js";
 
 export function createServer(client: FoodpandaClient): McpServer {
   const server = new McpServer(
@@ -426,6 +427,61 @@ export function createServer(client: FoodpandaClient): McpServer {
             {
               type: "text" as const,
               text: `Error placing order: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- refresh_token ---
+  server.registerTool(
+    "refresh_token",
+    {
+      title: "Refresh Session Token",
+      description:
+        "Opens a browser window to foodpanda.ph so the user can log in. Intercepts the session token from network requests and updates the server. Call this when: (1) other tools return a 'session token expired' or 'No session token configured' error, or (2) the user wants to switch accounts. The browser window is visible — the user logs in manually (handling any CAPTCHAs or MFA). Once logged in, the token is captured automatically and saved for future sessions.",
+      inputSchema: z.object({
+        timeout: z
+          .number()
+          .optional()
+          .describe(
+            "How long to wait for login in seconds (default 120). Increase if the user needs more time."
+          ),
+      }),
+    },
+    async ({ timeout }) => {
+      try {
+        const timeoutSeconds = timeout ?? 120;
+        const token = await refreshTokenViaBrowser(timeoutSeconds);
+
+        // Update the in-memory client
+        client.updateSessionToken(token);
+
+        // Persist to disk for future sessions
+        persistToken(token);
+
+        // Show a masked preview of the token
+        const masked =
+          token.length > 16
+            ? `${token.slice(0, 8)}...${token.slice(-8)}`
+            : "****";
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Token refreshed successfully (${masked}). You can now continue using other tools.`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error refreshing token: ${(error as Error).message}`,
             },
           ],
           isError: true,
