@@ -11,17 +11,15 @@ Tell your AI assistant what you want to eat, and it handles the rest — searchi
 - Build a cart with real-time price validation from foodpanda
 - Two-step checkout with order preview and explicit confirmation
 - Checkout with Cash on Delivery (credit card and GCash require browser-based payment flows and are not supported)
+- Automatic token refresh via browser login (no more copying tokens from DevTools)
 
 ## Quick Start
 
-### 1. Get your foodpanda credentials
+### 1. Get your delivery coordinates
 
-1. Open [foodpanda.ph](https://www.foodpanda.ph/) and log in
-2. Open browser DevTools (F12) → **Network** tab
-3. Browse to any restaurant or search for food
-4. Find any request to `ph.fd-api.com`
-5. Copy the **Bearer token** from the `Authorization` header (without the `Bearer ` prefix)
-6. Get the latitude and longitude of your delivery address (right-click on [Google Maps](https://maps.google.com) → copy coordinates)
+Get the latitude and longitude of your delivery address (right-click on [Google Maps](https://maps.google.com) → copy coordinates).
+
+> **Note:** You no longer need to manually copy a session token. The `refresh_token` tool handles authentication by opening a browser window for you to log in.
 
 ### 2. Configure your MCP client
 
@@ -36,7 +34,6 @@ Add to your `claude_desktop_config.json`:
       "command": "npx",
       "args": ["-y", "foodpanda-mcp"],
       "env": {
-        "FOODPANDA_SESSION_TOKEN": "your-jwt-token-here",
         "FOODPANDA_LATITUDE": "14.5623",
         "FOODPANDA_LONGITUDE": "121.0137"
       }
@@ -47,7 +44,7 @@ Add to your `claude_desktop_config.json`:
 
 #### Other MCP Clients
 
-Any MCP-compatible client that supports stdio transport will work. Set the three environment variables and run `npx foodpanda-mcp`.
+Any MCP-compatible client that supports stdio transport will work. Set the two coordinate environment variables and run `npx foodpanda-mcp`. On first use, the AI will open a browser for you to log in to foodpanda.
 
 ### 3. Try it out
 
@@ -72,12 +69,13 @@ Ask your AI assistant:
 | `remove_from_cart` | Remove items from cart |
 | `preview_order` | Preview order summary with delivery address and payment methods |
 | `place_order` | Place the order after user confirmation |
+| `refresh_token` | Open a browser to log in and refresh the session token |
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `FOODPANDA_SESSION_TOKEN` | Yes | JWT bearer token from your foodpanda session |
+| `FOODPANDA_SESSION_TOKEN` | No | JWT bearer token (optional — use `refresh_token` tool instead) |
 | `FOODPANDA_LATITUDE` | Yes | Latitude of your delivery address |
 | `FOODPANDA_LONGITUDE` | Yes | Longitude of your delivery address |
 
@@ -105,6 +103,7 @@ This prevents accidental orders — the AI cannot skip the confirmation step.
 git clone https://github.com/johnwhoyou/foodpanda-mcp.git
 cd foodpanda-mcp
 npm install
+npx playwright install chromium
 npm run build
 ```
 
@@ -117,7 +116,6 @@ Then use the local build in your MCP client config:
       "command": "node",
       "args": ["/absolute/path/to/foodpanda-mcp/build/index.js"],
       "env": {
-        "FOODPANDA_SESSION_TOKEN": "your-jwt-token-here",
         "FOODPANDA_LATITUDE": "14.5623",
         "FOODPANDA_LONGITUDE": "121.0137"
       }
@@ -128,7 +126,7 @@ Then use the local build in your MCP client config:
 
 ## Limitations
 
-- **Session tokens expire.** Refresh your token by repeating the setup step when API calls start failing.
+- **Session tokens expire.** The `refresh_token` tool handles this automatically — the AI opens a browser for you to log in when needed.
 - **No official API.** This server reverse-engineers foodpanda's internal web API. It may break if foodpanda changes their API.
 - **Philippines only.** Targets foodpanda.ph specifically. Other regions use different API endpoints and may not work.
 - **Payment methods.** Only Cash on Delivery is supported. Credit card and GCash require browser-based payment flows (Adyen SDK / app redirect) that cannot be completed through API calls. See [#2](https://github.com/johnwhoyou/foodpanda-mcp/issues/2).
