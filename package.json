@@ -1,6 +1,6 @@
 {
   "name": "foodpanda-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server for ordering food from foodpanda.ph via AI assistants",
   "type": "module",
   "bin": {
@@ -10,7 +10,6 @@
     "build": "tsc && chmod 755 build/index.js",
     "dev": "tsc --watch",
     "start": "node build/index.js",
-    "postinstall": "npx playwright install chrome",
     "prepublishOnly": "npm run build"
   },
   "files": [
