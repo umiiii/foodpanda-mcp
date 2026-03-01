@@ -39,19 +39,24 @@ export function persistToken(token: string): void {
 export async function refreshTokenViaBrowser(
   timeoutSeconds: number = 120
 ): Promise<string> {
-  let chromium: typeof import("playwright").chromium;
+  // Use playwright-extra with stealth plugin to avoid bot detection.
+  // This patches navigator.webdriver, Chrome automation signals, and other
+  // fingerprinting vectors that Google OAuth and foodpanda use to block bots.
+  let chromium: Awaited<typeof import("playwright-extra")>["chromium"];
   try {
-    const pw = await import("playwright");
+    const pw = await import("playwright-extra");
+    const stealthModule = await import("puppeteer-extra-plugin-stealth");
+    const StealthPlugin = stealthModule.default;
     chromium = pw.chromium;
+    chromium.use(StealthPlugin());
   } catch {
     throw new Error(
-      "Playwright is not installed. Run: npx playwright install chromium"
+      "Playwright is not installed. Run: npm install playwright-extra puppeteer-extra-plugin-stealth"
     );
   }
 
-  // Use a persistent context with the real Google Chrome (installed via
-  // `npx playwright install chrome` in postinstall). Playwright's bundled
-  // Chromium is blocked by Google OAuth sign-in.
+  // Persistent context preserves cookies across refreshes so the user
+  // may already be logged in from a previous session.
   mkdirSync(BROWSER_DATA_DIR, { recursive: true, mode: 0o700 });
 
   let context;
@@ -59,11 +64,6 @@ export async function refreshTokenViaBrowser(
     context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
       headless: false,
       channel: "chrome",
-      // Hide automation signals so Google OAuth doesn't block sign-in.
-      // --enable-automation sets navigator.webdriver=true and shows the
-      // "controlled by automated test software" infobar.
-      ignoreDefaultArgs: ["--enable-automation"],
-      args: ["--disable-blink-features=AutomationControlled"],
     });
   } catch (err) {
     throw new Error(
