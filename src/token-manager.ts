@@ -77,6 +77,9 @@ export async function refreshTokenViaBrowser(
         const token = authHeader.slice("Bearer ".length).trim();
         if (token.length === 0) return;
 
+        // Validate JWT structure (header.payload.signature)
+        if (token.split(".").length !== 3) return;
+
         clearTimeout(timer);
         resolve(token);
       });
