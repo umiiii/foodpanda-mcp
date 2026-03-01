@@ -24,12 +24,15 @@ export function loadPersistedToken(): string | null {
 }
 
 export function persistToken(token: string): void {
-  mkdirSync(TOKEN_DIR, { recursive: true });
+  mkdirSync(TOKEN_DIR, { recursive: true, mode: 0o700 });
   const data: PersistedToken = {
     token,
     savedAt: new Date().toISOString(),
   };
-  writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2), "utf-8");
+  writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
 }
 
 export async function refreshTokenViaBrowser(
