@@ -58,10 +58,11 @@ export async function refreshTokenViaBrowser(
   try {
     context = await chromium.launchPersistentContext(BROWSER_DATA_DIR, {
       headless: false,
+      channel: "chrome",
     });
   } catch (err) {
     throw new Error(
-      `Failed to launch browser. Make sure Chromium is installed: npx playwright install chromium\n${(err as Error).message}`
+      `Failed to launch browser. Make sure Google Chrome is installed.\n${(err as Error).message}`
     );
   }
 
