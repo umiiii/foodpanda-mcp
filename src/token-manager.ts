@@ -1,0 +1,92 @@
+import { homedir } from "os";
+import { join } from "path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+
+const TOKEN_DIR = join(homedir(), ".foodpanda-mcp");
+const TOKEN_FILE = join(TOKEN_DIR, "token.json");
+
+interface PersistedToken {
+  token: string;
+  savedAt: string;
+}
+
+export function loadPersistedToken(): string | null {
+  try {
+    if (!existsSync(TOKEN_FILE)) return null;
+    const data = JSON.parse(readFileSync(TOKEN_FILE, "utf-8")) as PersistedToken;
+    if (data && typeof data.token === "string" && data.token.length > 0) {
+      return data.token;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistToken(token: string): void {
+  mkdirSync(TOKEN_DIR, { recursive: true });
+  const data: PersistedToken = {
+    token,
+    savedAt: new Date().toISOString(),
+  };
+  writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2), "utf-8");
+}
+
+export async function refreshTokenViaBrowser(
+  timeoutSeconds: number = 120
+): Promise<string> {
+  let chromium: typeof import("playwright").chromium;
+  try {
+    const pw = await import("playwright");
+    chromium = pw.chromium;
+  } catch {
+    throw new Error(
+      "Playwright is not installed. Run: npx playwright install chromium"
+    );
+  }
+
+  let browser;
+  try {
+    browser = await chromium.launch({ headless: false });
+  } catch (err) {
+    throw new Error(
+      `Failed to launch browser. Make sure Chromium is installed: npx playwright install chromium\n${(err as Error).message}`
+    );
+  }
+
+  try {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    return await new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Login timed out after ${timeoutSeconds} seconds. Please try again.`
+          )
+        );
+      }, timeoutSeconds * 1000);
+
+      page.on("request", (request) => {
+        const url = request.url();
+        if (!url.includes("ph.fd-api.com")) return;
+
+        const authHeader = request.headers()["authorization"];
+        if (!authHeader || !authHeader.startsWith("Bearer ")) return;
+
+        const token = authHeader.slice("Bearer ".length).trim();
+        if (token.length === 0) return;
+
+        clearTimeout(timer);
+        resolve(token);
+      });
+
+      page.goto("https://www.foodpanda.ph").catch((err) => {
+        clearTimeout(timer);
+        reject(new Error(`Failed to navigate to foodpanda.ph: ${(err as Error).message}`));
+      });
+    });
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
