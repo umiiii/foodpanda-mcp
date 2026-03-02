@@ -123,6 +123,10 @@ Then use the local build in your MCP client config:
 }
 ```
 
+## Agent Skill
+
+This project includes an [Agent Skill](https://agentskills.io) at [`foodpanda-ordering/SKILL.md`](foodpanda-ordering/SKILL.md) that teaches AI agents the full ordering workflow — from searching restaurants to placing orders. If your agent supports the Agent Skills format, it can use this skill to order food autonomously via the MCP server.
+
 ## Limitations
 
 - **Session tokens expire.** The `refresh_token` tool handles this automatically — the AI opens a browser for you to log in when needed.
