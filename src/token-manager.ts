@@ -84,7 +84,7 @@ export async function refreshTokenViaBrowser(
 
       page.on("request", (request) => {
         const url = request.url();
-        if (!url.includes("ph.fd-api.com")) return;
+        if (!url.includes("sg.fd-api.com")) return;
 
         const authHeader = request.headers()["authorization"];
         if (!authHeader || !authHeader.startsWith("Bearer ")) return;
@@ -99,9 +99,9 @@ export async function refreshTokenViaBrowser(
         resolve(token);
       });
 
-      page.goto("https://www.foodpanda.ph").catch((err) => {
+      page.goto("https://www.foodpanda.sg").catch((err) => {
         clearTimeout(timer);
-        reject(new Error(`Failed to navigate to foodpanda.ph: ${(err as Error).message}`));
+        reject(new Error(`Failed to navigate to foodpanda.sg: ${(err as Error).message}`));
       });
     });
   } finally {

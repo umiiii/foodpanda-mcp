@@ -9,18 +9,6 @@ import { loadPersistedToken } from "./token-manager.js";
 const sessionToken =
   loadPersistedToken() || process.env.FOODPANDA_SESSION_TOKEN || null;
 
-const latitude = parseFloat(process.env.FOODPANDA_LATITUDE || "");
-const longitude = parseFloat(process.env.FOODPANDA_LONGITUDE || "");
-
-if (isNaN(latitude) || isNaN(longitude)) {
-  console.error(
-    "Error: FOODPANDA_LATITUDE and FOODPANDA_LONGITUDE environment variables are required.\n" +
-      "These should be the coordinates of your delivery address.\n" +
-      "Example: FOODPANDA_LATITUDE=14.5623 FOODPANDA_LONGITUDE=121.0137"
-  );
-  process.exit(1);
-}
-
 if (sessionToken) {
   console.error("foodpanda-mcp: loaded session token");
 } else {
@@ -29,13 +17,28 @@ if (sessionToken) {
   );
 }
 
-const client = new FoodpandaClient(sessionToken, latitude, longitude);
+const client = new FoodpandaClient(sessionToken);
 const server = createServer(client);
 
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("foodpanda-mcp server running on stdio");
+
+  // If we have a session token, fetch saved addresses and select the first one
+  if (sessionToken) {
+    try {
+      await client.initializeAddress();
+      const addr = client.getSelectedAddress();
+      if (addr) {
+        console.error(`foodpanda-mcp: using delivery address "${addr.formatted_customer_address}"`);
+      } else {
+        console.error("foodpanda-mcp: no saved addresses found. Add an address in the foodpanda app.");
+      }
+    } catch (err) {
+      console.error(`foodpanda-mcp: failed to load addresses (${(err as Error).message}). They will be loaded on first use.`);
+    }
+  }
 }
 
 main().catch((error) => {

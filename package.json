@@ -1,7 +1,7 @@
 {
   "name": "foodpanda-mcp",
   "version": "1.2.1",
-  "description": "MCP server for ordering food from foodpanda.ph via AI assistants",
+  "description": "MCP server for ordering food from foodpanda.sg via AI assistants",
   "type": "module",
   "bin": {
     "foodpanda-mcp": "./build/index.js"
@@ -22,7 +22,7 @@
     "ai-assistant",
     "model-context-protocol",
     "claude",
-    "philippines"
+    "singapore"
   ],
   "repository": {
     "type": "git",

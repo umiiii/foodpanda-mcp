@@ -17,9 +17,11 @@ import type {
   DeliveryAddress,
   PaymentMethodInfo,
   OrderPreview,
+  OrderHistoryEntry,
+  OrderHistoryResult,
 } from "./types.js";
 
-const FOODPANDA_API_BASE = "https://ph.fd-api.com";
+const FOODPANDA_API_BASE = "https://sg.fd-api.com";
 const GRAPHQL_SEARCH_HASH =
   "6d4dea2e0c8ab03c0d2934ca3db20b8914fc17e4109fb103307e4c077ba8506d";
 const GRAPHQL_VENDOR_LIST_HASH =
@@ -92,11 +94,15 @@ interface CachedVendorMenu {
 
 export class FoodpandaClient {
   private sessionToken: string | null;
-  private latitude: number;
-  private longitude: number;
+  private latitude: number = 0;
+  private longitude: number = 0;
   private customerCode: string;
   private perseusClientId: string;
   private perseusSessionId: string;
+
+  // Saved delivery addresses from the API
+  private savedAddresses: DeliveryAddress[] = [];
+  private selectedAddress: DeliveryAddress | null = null;
 
   // In-memory cart state (foodpanda cart is stateless / server recalculates)
   private cartProducts: CartProductPayload[] = [];
@@ -113,10 +119,8 @@ export class FoodpandaClient {
   // Menu cache keyed by vendor code
   private menuCache: Map<string, CachedVendorMenu> = new Map();
 
-  constructor(sessionToken: string | null, latitude: number, longitude: number) {
+  constructor(sessionToken: string | null) {
     this.sessionToken = sessionToken;
-    this.latitude = latitude;
-    this.longitude = longitude;
     this.customerCode = sessionToken ? this.extractCustomerCode(sessionToken) : "";
 
     // Generate Perseus tracking IDs (required by GraphQL endpoint)
@@ -155,6 +159,61 @@ export class FoodpandaClient {
   public updateSessionToken(token: string): void {
     this.sessionToken = token;
     this.customerCode = this.extractCustomerCode(token);
+  }
+
+  /**
+   * Fetch saved addresses and select the first one as the active delivery address.
+   * Must be called after the session token is set.
+   */
+  public async initializeAddress(): Promise<void> {
+    const addresses = await this.getDeliveryAddresses();
+    this.savedAddresses = addresses;
+    if (addresses.length > 0) {
+      this.selectAddress(addresses[0]);
+    }
+  }
+
+  private selectAddress(address: DeliveryAddress): void {
+    this.selectedAddress = address;
+    this.latitude = address.latitude;
+    this.longitude = address.longitude;
+  }
+
+  /**
+   * Return all saved delivery addresses.
+   */
+  public async listAddresses(): Promise<DeliveryAddress[]> {
+    const addresses = await this.getDeliveryAddresses();
+    this.savedAddresses = addresses;
+    return addresses;
+  }
+
+  /**
+   * Switch to a different saved delivery address by its ID.
+   */
+  public async switchAddress(addressId: number): Promise<DeliveryAddress> {
+    // Refresh the list in case it changed
+    const addresses = await this.getDeliveryAddresses();
+    this.savedAddresses = addresses;
+
+    const match = addresses.find((a) => a.id === addressId);
+    if (!match) {
+      throw new Error(
+        `Address ID ${addressId} not found. Use list_addresses to see available addresses.`
+      );
+    }
+
+    this.selectAddress(match);
+    // Clear cart since delivery area may have changed
+    this.clearCart();
+    return match;
+  }
+
+  /**
+   * Return the currently selected delivery address, or null if none.
+   */
+  public getSelectedAddress(): DeliveryAddress | null {
+    return this.selectedAddress;
   }
 
   // ----------------------------------------------------------------
@@ -219,7 +278,7 @@ export class FoodpandaClient {
         "customer-longitude": String(this.longitude),
         "display-context": displayContext,
         platform: "web",
-        locale: "en_PH",
+        locale: "en_SG",
       },
       body: JSON.stringify(body),
     });
@@ -259,7 +318,7 @@ export class FoodpandaClient {
           query,
           latitude: this.latitude,
           longitude: this.longitude,
-          locale: "en_PH",
+          locale: "en_SG",
           languageId: 1,
           expeditionType: "DELIVERY",
           customerType: "B2C",
@@ -400,7 +459,7 @@ export class FoodpandaClient {
           expeditionType: "DELIVERY",
           latitude: this.latitude,
           longitude: this.longitude,
-          locale: "en_PH",
+          locale: "en_SG",
           customerType: "B2C",
           languageId: 1,
           page: "CHAIN_LISTING_PAGE",
@@ -511,7 +570,7 @@ export class FoodpandaClient {
     const path =
       `/api/v5/vendors/${encodeURIComponent(vendorCode)}` +
       `?include=menus,bundles,multiple_discounts` +
-      `&language_id=1&opening_type=delivery&basket_currency=PHP` +
+      `&language_id=1&opening_type=delivery&basket_currency=SGD` +
       `&latitude=${this.latitude}&longitude=${this.longitude}`;
 
     interface VendorResponse {
@@ -599,7 +658,7 @@ export class FoodpandaClient {
     const path =
       `/api/v5/vendors/${encodeURIComponent(vendorCode)}` +
       `?include=menus,bundles,multiple_discounts` +
-      `&language_id=1&opening_type=delivery&basket_currency=PHP` +
+      `&language_id=1&opening_type=delivery&basket_currency=SGD` +
       `&latitude=${this.latitude}&longitude=${this.longitude}`;
 
     interface VendorMenuResponse {
@@ -927,28 +986,18 @@ export class FoodpandaClient {
   }
 
   /**
-   * Pick the best delivery address: closest to configured lat/lng.
+   * Return the currently selected delivery address.
    */
-  private pickDeliveryAddress(addresses: DeliveryAddress[]): DeliveryAddress {
-    if (addresses.length === 0) {
+  private pickDeliveryAddress(_addresses: DeliveryAddress[]): DeliveryAddress {
+    if (this.selectedAddress) return this.selectedAddress;
+    // Fallback: use first from the provided list
+    if (_addresses.length === 0) {
       throw new Error(
         "No saved delivery addresses found. Please add an address in the foodpanda app first."
       );
     }
-    if (addresses.length === 1) return addresses[0];
-
-    let best = addresses[0];
-    let bestDist = Infinity;
-    for (const addr of addresses) {
-      const dlat = addr.latitude - this.latitude;
-      const dlng = addr.longitude - this.longitude;
-      const dist = dlat * dlat + dlng * dlng;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = addr;
-      }
-    }
-    return best;
+    this.selectAddress(_addresses[0]);
+    return _addresses[0];
   }
 
   private async getPurchaseIntent(
@@ -986,12 +1035,12 @@ export class FoodpandaClient {
     }
 
     const result = await this.restRequest<IntentResponse>(
-      "/api/v5/purchase/intent?include=cashback&locale=en_PH",
+      "/api/v5/purchase/intent?include=cashback&locale=en_SG",
       {
         method: "POST",
         body: JSON.stringify({
           subtotal,
-          currency: "PHP",
+          currency: "SGD",
           vendorCode,
           amount: total,
           emoneyAmountToUse: 0,
@@ -1263,9 +1312,9 @@ export class FoodpandaClient {
       vendor: this.cartVendor,
       products: checkoutProducts,
       payment: {
-        client_redirect_url: "https://www.foodpanda.ph/payments/handle-payment/",
+        client_redirect_url: "https://www.foodpanda.sg/payments/handle-payment/",
         purchase_intent_id: purchaseIntentId,
-        currency: "PHP",
+        currency: "SGD",
         methods: paymentMethodsPayload,
       },
       voucher: "",
@@ -1319,7 +1368,7 @@ export class FoodpandaClient {
         headers: {
           "dps-session-id": dpsSessionId,
           "x-caller-platform": "mfe",
-          "x-global-entity-id": "FP_PH",
+          "x-global-entity-id": "FP_SG",
         },
       }
     );
@@ -1530,5 +1579,107 @@ export class FoodpandaClient {
     this.cartServiceFee = 0;
     this.cartTotal = 0;
     this.nextCartItemId = 1;
+  }
+
+  // ----------------------------------------------------------------
+  // Order History
+  // ----------------------------------------------------------------
+
+  async getOrderHistory(
+    offset: number = 0,
+    limit: number = 10
+  ): Promise<OrderHistoryResult> {
+    interface OrderHistoryResponse {
+      data: {
+        total_count: string;
+        items: Array<{
+          order_code: string;
+          ordered_at: { date: string; timezone: string };
+          confirmed_delivery_time?: { date: string; timezone: string };
+          current_status: {
+            code: number;
+            message: string;
+            type: string;
+          };
+          vendor: {
+            code: string;
+            name: string;
+            hero_listing_image?: string;
+          };
+          order_address: string;
+          total_value: number;
+          subtotal: number;
+          service_fee_total: number;
+          delivery_fee?: number;
+          payment_type_code: string;
+          expedition_type: string;
+          status_flags: {
+            is_delivered: boolean;
+            is_canceled: boolean;
+            is_active: boolean;
+            is_reorderable: boolean;
+          };
+          order_products: Array<{
+            name: string;
+            quantity: number;
+            total_price: number;
+            toppings_attributes?: { value: string } | null;
+          }>;
+          dynamic_fees?: Array<{
+            translation_key: string;
+            value: number;
+          }>;
+        }>;
+      };
+    }
+
+    const path =
+      `/api/v5/orders/order_history` +
+      `?language_id=1&offset=${offset}&limit=${limit}` +
+      `&item_replacement=true&include=order_products,order_details`;
+
+    const result = await this.restRequest<OrderHistoryResponse>(path);
+
+    const orders: OrderHistoryEntry[] = result.data.items.map((item) => {
+      // Extract delivery fee from dynamic_fees if not at top level
+      let deliveryFee = item.delivery_fee ?? 0;
+      if (!deliveryFee && item.dynamic_fees) {
+        const feeEntry = item.dynamic_fees.find(
+          (f) => f.translation_key === "NEXTGEN_DELIVERY_FEE"
+        );
+        if (feeEntry) deliveryFee = feeEntry.value;
+      }
+
+      return {
+        order_code: item.order_code,
+        ordered_at: item.ordered_at.date,
+        delivered_at: item.confirmed_delivery_time?.date ?? null,
+        status: item.current_status.message,
+        status_type: item.current_status.type,
+        restaurant_code: item.vendor.code,
+        restaurant_name: item.vendor.name,
+        delivery_address: item.order_address,
+        items: item.order_products.map((p) => ({
+          name: p.name,
+          quantity: p.quantity,
+          price: p.total_price,
+          toppings: p.toppings_attributes?.value || null,
+        })),
+        subtotal: item.subtotal,
+        delivery_fee: deliveryFee,
+        service_fee: item.service_fee_total,
+        total: item.total_value,
+        payment_method: item.payment_type_code,
+        is_delivered: item.status_flags.is_delivered,
+        is_canceled: item.status_flags.is_canceled,
+        is_active: item.status_flags.is_active,
+        is_reorderable: item.status_flags.is_reorderable,
+      };
+    });
+
+    return {
+      total_count: parseInt(result.data.total_count, 10),
+      orders,
+    };
   }
 }

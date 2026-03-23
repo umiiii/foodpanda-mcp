@@ -1,12 +1,12 @@
 ---
 name: foodpanda-ordering
-description: "Order food from foodpanda.ph using the foodpanda MCP server. Search restaurants, browse menus, build a cart, and place delivery orders via Cash on Delivery."
+description: "Order food from foodpanda.sg using the foodpanda MCP server. Search restaurants, browse menus, build a cart, and place delivery orders via Cash on Delivery."
 compatibility: "Requires the foodpanda-mcp server to be installed and configured as an MCP server."
 ---
 
 # Foodpanda Ordering Skill
 
-An agent skill for ordering food from foodpanda.ph through the foodpanda MCP server.
+An agent skill for ordering food from foodpanda.sg through the foodpanda MCP server.
 
 ## Prerequisites
 
@@ -19,18 +19,9 @@ Install the MCP server using one of the following methods:
 
 Then configure it as an MCP server in your AI client (e.g., Claude Desktop, Cursor, etc.).
 
-### Required Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `FOODPANDA_LATITUDE` | Latitude of the delivery address (e.g., `14.5547`) |
-| `FOODPANDA_LONGITUDE` | Longitude of the delivery address (e.g., `121.0244`) |
-
-These coordinates determine which restaurants are available and where food will be delivered.
-
 ### Authentication
 
-Session tokens are handled automatically. On first use, or when a token expires, call the `refresh_token` tool. This opens a browser window where the user can log in to foodpanda.ph manually. The token is captured automatically and saved for future sessions.
+Session tokens are handled automatically. On first use, or when a token expires, call the `refresh_token` tool. This opens a browser window where the user can log in to foodpanda.sg manually. The token is captured automatically and saved for future sessions.
 
 Alternatively, set the `FOODPANDA_SESSION_TOKEN` environment variable with a token obtained from browser DevTools.
 
@@ -111,22 +102,24 @@ Report the order code back to the user so they can track their order.
 | `remove_from_cart` | Remove an item from cart by its cart item ID |
 | `preview_order` | Preview the order summary with delivery address and payment methods |
 | `place_order` | Place the order (requires prior user confirmation) |
+| `list_addresses` | List all saved delivery addresses |
+| `switch_address` | Switch the active delivery address (clears cart) |
 | `refresh_token` | Open a browser for the user to log in and refresh the session token |
 
 ## Known Limitations
 
 - **Cash on Delivery only** — Credit card payments require the Adyen browser SDK for payment authorization. GCash requires an app redirect. Neither payment method works via API. Use `payment_on_delivery` exclusively.
-- **Philippines only** — This server uses foodpanda.ph endpoints (`ph.fd-api.com`) and is not compatible with other countries.
+- **Singapore only** — This server uses foodpanda.sg endpoints (`sg.fd-api.com`) and is not compatible with other countries.
 - **Token expiry** — Session tokens expire periodically. If API calls fail with authentication errors, use `refresh_token` to re-authenticate.
 - **Reverse-engineered API** — The server uses reverse-engineered foodpanda internal endpoints. These may change without notice.
-- **Single delivery address** — The server uses the saved address closest to the configured latitude/longitude coordinates. To change the delivery address, update `FOODPANDA_LATITUDE` and `FOODPANDA_LONGITUDE`.
+- **Delivery address** — The server uses the first saved address by default. Use `list_addresses` and `switch_address` to change it.
 
 ## Best Practices
 
 - **Always preview before placing** — Call `preview_order` and get explicit user confirmation before calling `place_order`. This is a non-negotiable safety requirement.
 - **Handle price changes** — If a price changes between browsing and checkout, notify the user before proceeding. The server re-calculates the cart automatically before checkout to avoid stale price conflicts.
 - **Ask for specifics** — When the user makes a vague request like "order me food," ask what cuisine or restaurant they prefer before searching.
-- **Format prices in PHP** — Display prices in Philippine Pesos, e.g., ₱149.00.
+- **Format prices in SGD** — Display prices in Singapore Dollars, e.g., S$14.90.
 - **Meet minimum order** — If the cart total is below the restaurant's minimum order amount, inform the user and suggest adding more items before placing the order.
 - **Re-preview after changes** — If the user modifies the cart after previewing, call `preview_order` again before placing the order.
 - **Handle auth errors gracefully** — If any tool returns a session token error, call `refresh_token` and retry the failed operation.

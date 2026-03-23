@@ -20,7 +20,7 @@ export function createServer(client: FoodpandaClient): McpServer {
     {
       title: "Search Restaurants",
       description:
-        "Search for restaurants on foodpanda.ph near the configured delivery address. Returns a list of matching restaurants with id (vendor code), name, cuisine, rating, delivery fee, estimated delivery time, and minimum order amount. Chain restaurants (e.g. Jollibee, McDonald's) include chain_code, chain_name, and total_outlets fields. When total_outlets > 1, use list_outlets with the chain_code to see all branches.",
+        "Search for restaurants on foodpanda.sg near the configured delivery address. Returns a list of matching restaurants with id (vendor code), name, cuisine, rating, delivery fee, estimated delivery time, and minimum order amount. Chain restaurants (e.g. Jollibee, McDonald's) include chain_code, chain_name, and total_outlets fields. When total_outlets > 1, use list_outlets with the chain_code to see all branches.",
       inputSchema: z.object({
         query: z.string().describe("Search query (e.g. 'Jollibee', 'pizza', 'Thai food')"),
         cuisine: z.string().optional().describe("Filter by cuisine type"),
@@ -435,13 +435,129 @@ export function createServer(client: FoodpandaClient): McpServer {
     }
   );
 
+  // --- order_history ---
+  server.registerTool(
+    "order_history",
+    {
+      title: "Order History",
+      description:
+        "View past orders from foodpanda. Returns order details including restaurant name, items ordered, prices, status, and delivery info. Supports pagination with offset and limit.",
+      inputSchema: z.object({
+        offset: z.number().optional().describe("Pagination offset (default 0)"),
+        limit: z.number().optional().describe("Number of orders to return (default 10, max 20)"),
+      }),
+    },
+    async ({ offset, limit }) => {
+      try {
+        const result = await client.getOrderHistory(offset ?? 0, Math.min(limit ?? 10, 20));
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error fetching order history: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- list_addresses ---
+  server.registerTool(
+    "list_addresses",
+    {
+      title: "List Delivery Addresses",
+      description:
+        "List all saved delivery addresses for the logged-in account. Returns each address with its ID, label, formatted address, and coordinates. Use switch_address to change the active delivery address.",
+      inputSchema: z.object({}),
+    },
+    async () => {
+      try {
+        const addresses = await client.listAddresses();
+        const selected = client.getSelectedAddress();
+        const result = addresses.map((a) => ({
+          id: a.id,
+          label: a.label,
+          formatted_address: a.formatted_customer_address,
+          latitude: a.latitude,
+          longitude: a.longitude,
+          is_selected: selected ? a.id === selected.id : false,
+        }));
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error listing addresses: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // --- switch_address ---
+  server.registerTool(
+    "switch_address",
+    {
+      title: "Switch Delivery Address",
+      description:
+        "Switch the active delivery address to a different saved address. This clears the current cart since available restaurants may differ by location. Use list_addresses to see available address IDs.",
+      inputSchema: z.object({
+        address_id: z.number().describe("The address ID from list_addresses results"),
+      }),
+    },
+    async ({ address_id }) => {
+      try {
+        const address = await client.switchAddress(address_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Switched to address: ${address.formatted_customer_address} (${address.latitude}, ${address.longitude}). Cart has been cleared.`,
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error switching address: ${(error as Error).message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
   // --- refresh_token ---
   server.registerTool(
     "refresh_token",
     {
       title: "Refresh Session Token",
       description:
-        "Opens a browser window to foodpanda.ph so the user can log in. Intercepts the session token from network requests and updates the server. Call this when: (1) other tools return a 'session token expired' or 'No session token configured' error, or (2) the user wants to switch accounts. The browser window is visible — the user logs in manually (handling any CAPTCHAs or MFA). Once logged in, the token is captured automatically and saved for future sessions.",
+        "Opens a browser window to foodpanda.sg so the user can log in. Intercepts the session token from network requests and updates the server. Call this when: (1) other tools return a 'session token expired' or 'No session token configured' error, or (2) the user wants to switch accounts. The browser window is visible — the user logs in manually (handling any CAPTCHAs or MFA). Once logged in, the token is captured automatically and saved for future sessions.",
       inputSchema: z.object({
         timeout: z
           .number()
@@ -462,17 +578,29 @@ export function createServer(client: FoodpandaClient): McpServer {
         // Persist to disk for future sessions
         persistToken(token);
 
+        // Load delivery addresses with the new token
+        try {
+          await client.initializeAddress();
+        } catch {
+          // Non-fatal — addresses can be loaded later
+        }
+
         // Show a masked preview of the token
         const masked =
           token.length > 16
             ? `${token.slice(0, 8)}...${token.slice(-8)}`
             : "****";
 
+        const addr = client.getSelectedAddress();
+        const addrMsg = addr
+          ? ` Delivery address: ${addr.formatted_customer_address}`
+          : "";
+
         return {
           content: [
             {
               type: "text" as const,
-              text: `Token refreshed successfully (${masked}). You can now continue using other tools.`,
+              text: `Token refreshed successfully (${masked}).${addrMsg} You can now continue using other tools.`,
             },
           ],
         };

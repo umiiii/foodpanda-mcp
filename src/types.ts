@@ -275,3 +275,36 @@ export interface CartCalculateRequest {
   participants: never[];
   items: null;
 }
+
+// --- Order History types ---
+
+export interface OrderHistoryEntry {
+  order_code: string;
+  ordered_at: string;
+  delivered_at: string | null;
+  status: string;
+  status_type: string;
+  restaurant_code: string;
+  restaurant_name: string;
+  delivery_address: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    price: number;
+    toppings: string | null;
+  }>;
+  subtotal: number;
+  delivery_fee: number;
+  service_fee: number;
+  total: number;
+  payment_method: string;
+  is_delivered: boolean;
+  is_canceled: boolean;
+  is_active: boolean;
+  is_reorderable: boolean;
+}
+
+export interface OrderHistoryResult {
+  total_count: number;
+  orders: OrderHistoryEntry[];
+}
