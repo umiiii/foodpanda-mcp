@@ -3,7 +3,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { FoodpandaClient } from "./foodpanda-client.js";
 import { createServer } from "./server.js";
-import { loadPersistedToken } from "./token-manager.js";
+import { loadPersistedToken, silentRefreshToken, persistToken } from "./token-manager.js";
 
 // Token loading priority: persisted file > env var > null (tokenless startup)
 const sessionToken =
@@ -18,6 +18,19 @@ if (sessionToken) {
 }
 
 const client = new FoodpandaClient(sessionToken);
+
+client.setTokenRefreshCallback(async () => {
+  console.error("foodpanda-mcp: token expiring soon, attempting silent refresh...");
+  const newToken = await silentRefreshToken();
+  if (newToken) {
+    persistToken(newToken);
+    console.error("foodpanda-mcp: silent token refresh successful");
+  } else {
+    console.error("foodpanda-mcp: silent refresh failed, use refresh_token tool to log in manually");
+  }
+  return newToken;
+});
+
 const server = createServer(client);
 
 async function main() {

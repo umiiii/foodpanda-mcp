@@ -1,3 +1,4 @@
+import { isTokenExpiringSoon } from "./token-manager.js";
 import type {
   Restaurant,
   RestaurantDetails,
@@ -119,6 +120,10 @@ export class FoodpandaClient {
   // Menu cache keyed by vendor code
   private menuCache: Map<string, CachedVendorMenu> = new Map();
 
+  // Silent token refresh
+  private tokenRefreshCallback: (() => Promise<string | null>) | null = null;
+  private refreshInProgress: Promise<string | null> | null = null;
+
   constructor(sessionToken: string | null) {
     this.sessionToken = sessionToken;
     this.customerCode = sessionToken ? this.extractCustomerCode(sessionToken) : "";
@@ -159,6 +164,38 @@ export class FoodpandaClient {
   public updateSessionToken(token: string): void {
     this.sessionToken = token;
     this.customerCode = this.extractCustomerCode(token);
+  }
+
+  /**
+   * Register a callback that silently refreshes the token when it's about to expire.
+   */
+  public setTokenRefreshCallback(cb: () => Promise<string | null>): void {
+    this.tokenRefreshCallback = cb;
+  }
+
+  /**
+   * Check if the current token is expiring soon and silently refresh it.
+   * Called automatically before each API request.
+   */
+  private async ensureFreshToken(): Promise<void> {
+    if (!this.sessionToken || !this.tokenRefreshCallback) return;
+    if (!isTokenExpiringSoon(this.sessionToken)) return;
+
+    // Deduplicate concurrent refresh attempts
+    if (!this.refreshInProgress) {
+      this.refreshInProgress = this.tokenRefreshCallback().finally(() => {
+        this.refreshInProgress = null;
+      });
+    }
+
+    try {
+      const newToken = await this.refreshInProgress;
+      if (newToken) {
+        this.updateSessionToken(newToken);
+      }
+    } catch {
+      // Silent failure — let the normal 401 flow handle it
+    }
   }
 
   /**
@@ -241,6 +278,7 @@ export class FoodpandaClient {
     path: string,
     options: RequestInit = {}
   ): Promise<T> {
+    await this.ensureFreshToken();
     const url = `${FOODPANDA_API_BASE}${path}`;
     const response = await fetch(url, {
       ...options,
@@ -267,6 +305,7 @@ export class FoodpandaClient {
   }
 
   private async graphqlRequest<T>(body: object, displayContext: string = "SEARCH"): Promise<T> {
+    await this.ensureFreshToken();
     const url = `${FOODPANDA_API_BASE}/graphql`;
     const response = await fetch(url, {
       method: "POST",
